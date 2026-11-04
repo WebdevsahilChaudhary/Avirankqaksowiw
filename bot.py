@@ -31,8 +31,8 @@ import secret_engine as eng
 
 warnings.filterwarnings("ignore", category=PTBUserWarning)
 
-# ── ENVIRONMENT VARIABLES (SET IN RENDER DASHBOARD OR FALLBACK) ──
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "9062657804:AAFwmaaUU1AjhSYmQ_eCThXR1YWzbDJYYj8").strip()
+# ── STRICT ENVIRONMENT VARIABLES (SET IN RENDER DASHBOARD) ──
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "").strip()
 OWNER_ID = int(os.environ.get("OWNER_ID", "6681497425"))
 OWNER_USERNAME = os.environ.get("OWNER_USERNAME", "@Monsterlevi")
 BRAND_NAME = eng.BRAND_NAME
@@ -57,7 +57,7 @@ class KeepAliveHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def log_message(self, format, *args):
-        return  # Silence HTTP ping logs to save RAM & console noise
+        return
 
 
 def start_health_server() -> None:
@@ -311,7 +311,6 @@ async def send_log_message(bot, text: str) -> None:
 
 
 async def auto_restore_from_log_channel(bot) -> bool:
-    """When Render deploys or restarts, automatically restores the pinned DB from Log Channel!"""
     local_score = eng.count_orders_in_db(eng.DB_FILE)
     log_cid = get_log_channel_id()
     if not log_cid:
@@ -428,7 +427,7 @@ async def send_order_card_reliably(
     return False
 
 
-# ── JOIN REQUEST AUTO-APPROVER (ONLY PAID USER ID GETS APPROVED!) ──
+# ── JOIN REQUEST AUTO-APPROVER ──
 async def handle_secret_join_request(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     req = update.chat_join_request
     if not req:
@@ -521,7 +520,7 @@ async def handle_secret_join_request(update: Update, context: ContextTypes.DEFAU
         )
 
 
-# ── SECRET CHANNEL LEAVE TRACKER (MAX 3 WARNS -> PERMANENT BAN) ──
+# ── SECRET CHANNEL LEAVE TRACKER ──
 async def handle_secret_member_update(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     cmu = update.chat_member
     if not cmu:
@@ -686,9 +685,9 @@ async def check_access_gate(update: Update, context: ContextTypes.DEFAULT_TYPE, 
     return False
 
 
-# ── DYNAMIC MAIN MENU (HIDES PROOFS BUTTON AUTOMATICALLY WHEN TOGGLED OFF!) ──
+# ── DYNAMIC MAIN MENU ──
 def main_menu_kb() -> InlineKeyboardMarkup:
-     _, _, seats_left = eng.get_fomo_data()
+    _, _, seats_left = eng.get_fomo_data()
     join_lbl = f"🔥 JOIN SECRET GROUP ({seats_left} Seats Left!)" if is_fomo_enabled() else "🔥 JOIN SECRET GROUP NOW"
     rows = [
         [InlineKeyboardButton(join_lbl, callback_data="menu_browse")],
@@ -736,7 +735,7 @@ async def show_proofs_gallery_cb(update: Update, context: ContextTypes.DEFAULT_T
         return
 
     if not is_proofs_enabled() and query.from_user.id != OWNER_ID:
-        await safe_answer(query, "Proofs section abhi बंद hai!", show_alert=True)
+        await safe_answer(query, "Proofs section abhi off hai!", show_alert=True)
         await ui_render(update, render_welcome_message(query.from_user.first_name), reply_markup=main_menu_kb())
         return
 
@@ -973,7 +972,7 @@ async def render_paper_view(
     if final_price < base_price:
         price_line = f"💰 <b>Entry Fee:</b> <s>₹{base_price}</s>  👉  <b>₹{final_price} ONLY!</b> 🔥\n{clean(disc_reason)}\n"
     else:
-         anchor_mrp = base_price * 2
+        anchor_mrp = base_price * 2
         price_line = f"💰 <b>Entry Fee:</b> <s>₹{anchor_mrp}</s>  👉  <b>₹{base_price} ONLY!</b> <i>(Limited Offer)</i>\n"
 
     preview_fid = (paper["preview_file_id"] or "").strip()
@@ -1429,7 +1428,6 @@ async def order_decision_cb(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         except TelegramError:
             pass
 
-        # Immediately back up DB to Log Channel after every accepted order so Render never loses data!
         asyncio.create_task(send_log_channel_backup(context.bot, reason=f"Order #{order_id} Accepted"))
 
     elif action == "reject":
@@ -1494,7 +1492,7 @@ async def pending_orders_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await asyncio.sleep(0.15)
 
 
-# ── ADMIN PANEL (WITH PROOFS ON/OFF TOGGLE, FOMO MANAGER & TEXT EDITOR) ──
+# ── ADMIN PANEL ──
 def admin_menu_kb() -> InlineKeyboardMarkup:
     maint_lbl = "🔴 Maintenance: ON" if is_maintenance_mode() else "🟢 Maintenance: OFF"
     ocr_lbl = "🤖 AI OCR: ON ✅" if is_ocr_strict() else "🤖 AI OCR: OFF ❌"
@@ -2231,10 +2229,12 @@ async def post_init_hook(application: Application) -> None:
 
 
 def main() -> None:
+    if not BOT_TOKEN:
+        raise RuntimeError("❌ BOT_TOKEN environment variable is not set in Render!")
+
     start_health_server()
     eng.init_db()
 
-    # Optimized connection pool for Render 512MB RAM
     t_req = HTTPXRequest(connection_pool_size=64, read_timeout=20.0, write_timeout=20.0, connect_timeout=15.0, pool_timeout=15.0)
     app = (
         Application.builder()
